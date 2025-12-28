@@ -1,9 +1,13 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { UserService } from '../user/service/user.service';
-import { OauthProvider } from '../user/model/oauth-provider';
 import { ConfigService } from '@nestjs/config';
-import { JwtPayload } from './model/jwt-payload.interface';
+import {
+  JwtPayload,
+  OAuthLoginResponse,
+  OAuthProfile,
+  UserTokens,
+} from './model/auth-model.types';
 
 @Injectable()
 export class AuthService {
@@ -13,20 +17,18 @@ export class AuthService {
     private configService: ConfigService,
   ) {}
 
-  async handleOAuthLogin(oauthProfile: {
-    oauthId: string;
-    provider: OauthProvider;
-  }) {
+  async handleOAuthLogin(
+    oAuthProfile: OAuthProfile,
+  ): Promise<OAuthLoginResponse & { refreshToken: string }> {
     const user = await this.userService.findOrCreateByOAuthId(
-      oauthProfile.oauthId,
-      oauthProfile.provider,
+      oAuthProfile.oauthId,
+      oAuthProfile.provider,
     );
 
     const { accessToken, refreshToken } = this.generateTokens(
       user._id.toString(),
     );
 
-    // Store refresh token in database
     await this.userService.saveRefreshToken(user._id.toString(), refreshToken);
 
     return {
@@ -36,62 +38,43 @@ export class AuthService {
     };
   }
 
-  async refreshAccessToken(
-    refreshToken: string,
-  ): Promise<{ accessToken: string } | null> {
-    try {
-      const verified = this.jwtService.verify(refreshToken, {
-        secret: this.configService.get<string>('JWT_SECRET'),
-      }) as unknown;
+  async refreshAccessToken(refreshToken: string): Promise<UserTokens> {
+    const verified = this.jwtService.verify(refreshToken, {
+      secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
+    }) as unknown;
 
-      if (
-        !verified ||
-        typeof verified !== 'object' ||
-        !('userId' in verified) ||
-        typeof (verified as Record<string, unknown>).userId !== 'string'
-      ) {
-        return null;
-      }
-
-      const { userId } = verified as JwtPayload;
-
-      const user = await this.userService.findById(userId);
-      if (!user || user.refreshToken !== refreshToken) {
-        return null;
-      }
-
-      const newAccessToken = this.jwtService.sign(
-        { userId },
-        {
-          secret: this.configService.get<string>('JWT_SECRET'),
-          expiresIn: '10m',
-        },
-      );
-
-      return { accessToken: newAccessToken };
-    } catch {
-      return null;
+    if (
+      !verified ||
+      typeof verified !== 'object' ||
+      !('userId' in verified) ||
+      typeof (verified as Record<string, unknown>).userId !== 'string'
+    ) {
+      throw new UnauthorizedException();
     }
+
+    const { userId } = verified as JwtPayload;
+
+    const user = await this.userService.findById(userId);
+    if (!user || user.refreshToken !== refreshToken) {
+      throw new UnauthorizedException();
+    }
+
+    return this.generateTokens(userId);
   }
 
-  async logout(userId: string): Promise<boolean> {
-    try {
-      await this.userService.clearRefreshToken(userId);
-      return true;
-    } catch {
-      return false;
-    }
+  async logout(userId: string): Promise<void> {
+    await this.userService.clearRefreshToken(userId);
   }
 
-  private generateTokens(userId: string) {
+  private generateTokens(userId: string): UserTokens {
     const payload: JwtPayload = { userId };
     const accessToken = this.jwtService.sign(payload, {
-      secret: this.configService.get<string>('JWT_SECRET'),
-      expiresIn: '10m',
+      secret: this.configService.get<string>('JWT_ACCESS_SECRET'),
+      expiresIn: '15m',
     });
 
     const refreshToken = this.jwtService.sign(payload, {
-      secret: this.configService.get<string>('JWT_SECRET'),
+      secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
       expiresIn: '7d',
     });
 

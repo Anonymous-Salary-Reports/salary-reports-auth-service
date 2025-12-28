@@ -13,7 +13,7 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
       callbackURL:
         configService.get('GOOGLE_CALLBACK_URL') ||
         'http://localhost:3001/auth/google-redirect',
-      scope: ['openid'], // 'openid' gets you the ID token with 'sub'
+      scope: ['openid', 'profile'], // 'openid' gets you the ID token with 'sub'
     });
   }
 

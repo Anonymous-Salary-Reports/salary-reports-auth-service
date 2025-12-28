@@ -1,16 +1,30 @@
-import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Req,
+  Res,
+  UnauthorizedException,
+  UseGuards,
+} from '@nestjs/common';
 import { GoogleOAuthGuard } from './guards/google-oauth.guard';
 import { AuthService } from './auth.service';
-import { OauthProvider } from '../user/model/oauth-provider';
 import type {
   AuthenticatedRequest,
+  LogoutResponse,
+  OAuthLoginResponse,
   OAuthRequest,
-} from './model/auth-request.types';
+} from './model/auth-model.types';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import type { Request, Response } from 'express';
+import { ConfigService } from '@nestjs/config';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly configService: ConfigService,
+  ) {}
 
   @Get('/login')
   @UseGuards(GoogleOAuthGuard)
@@ -18,29 +32,52 @@ export class AuthController {
 
   @Get('/google-redirect')
   @UseGuards(GoogleOAuthGuard)
-  async redirect(@Req() req: OAuthRequest) {
-    const oauthUser = req.user as { oauthId: string; provider: OauthProvider };
-    return this.authService.handleOAuthLogin(oauthUser);
+  async redirect(
+    @Req() req: OAuthRequest,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<OAuthLoginResponse> {
+    const { userId, accessToken, refreshToken } =
+      await this.authService.handleOAuthLogin(req.user);
+
+    res.cookie('refreshToken', refreshToken, {
+      httpOnly: true,
+      secure: this.configService.get('NODE_ENV') === 'production',
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+    return { userId, accessToken };
   }
 
   @Post('/refresh')
   @UseGuards(JwtAuthGuard)
-  async refreshAccessToken(@Body() body: { refreshToken: string }) {
-    const refreshToken: string = body.refreshToken;
-    const result = await this.authService.refreshAccessToken(refreshToken);
-    if (!result) {
-      return { error: 'Invalid refresh token' };
+  async refreshAccessToken(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const cookies = req.cookies as Record<string, string> | undefined;
+    const refreshToken = cookies?.['refreshToken'];
+    if (!refreshToken) {
+      throw new UnauthorizedException('Refresh token not found');
     }
-    return result;
+    const tokens = await this.authService.refreshAccessToken(refreshToken);
+
+    res.cookie('refreshToken', tokens.refreshToken, {
+      httpOnly: true,
+      secure: this.configService.get('NODE_ENV') === 'production', // HTTPS only in prod
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    });
   }
 
   @Post('/logout')
   @UseGuards(JwtAuthGuard)
-  async logout(@Req() req: AuthenticatedRequest) {
-    const ok = await this.authService.logout(req.user.userId);
-    if (!ok) {
-      return { error: 'Logout failed' };
+  async logout(@Req() req: AuthenticatedRequest): Promise<LogoutResponse> {
+    try {
+      await this.authService.logout(req.user.userId);
+    } catch (error) {
+      return { success: false, message: `Logout failed due to ${error}` };
     }
+
     return {
       success: true,
       message: 'Logged out successfully. Please discard your tokens.',
