@@ -12,7 +12,6 @@ import { AuthService } from './auth.service';
 import type {
   AuthenticatedRequest,
   LogoutResponse,
-  OAuthLoginResponse,
   OAuthRequest,
 } from './model/auth-model.types';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
@@ -34,8 +33,8 @@ export class AuthController {
   @UseGuards(GoogleOAuthGuard)
   async redirect(
     @Req() req: OAuthRequest,
-    @Res({ passthrough: true }) res: Response,
-  ): Promise<OAuthLoginResponse> {
+    @Res() res: Response,
+  ): Promise<void> {
     const { userId, accessToken, refreshToken } =
       await this.authService.handleOAuthLogin(req.user);
 
@@ -45,11 +44,12 @@ export class AuthController {
       sameSite: 'strict',
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
-    return { userId, accessToken };
+    res.redirect(
+      `http://localhost:5173/auth/callback?token=${accessToken}&userId=${userId}`,
+    );
   }
 
   @Post('/refresh')
-  @UseGuards(JwtAuthGuard)
   async refreshAccessToken(
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
@@ -67,6 +67,10 @@ export class AuthController {
       sameSite: 'strict',
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
+
+    return {
+      accessToken: tokens.accessToken,
+    };
   }
 
   @Post('/logout')
