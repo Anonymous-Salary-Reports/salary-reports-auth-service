@@ -1,6 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
 import { OauthProvider } from './oauth-provider';
+import { Role } from './role';
 
 @Schema({ timestamps: true })
 export class User extends Document {
@@ -9,6 +10,9 @@ export class User extends Document {
 
   @Prop({ enum: OauthProvider, type: String, required: true })
   oauthProvider: OauthProvider;
+
+  @Prop({ required: true, enum: Role, type: String })
+  role: Role;
 
   @Prop({ type: String, default: null })
   refreshToken?: string;

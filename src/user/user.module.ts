@@ -3,6 +3,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { User, UserSchema } from './model/user.schema';
 import { UserService } from './service/user.service';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { UserController } from './controller/user.controller';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
       inject: [ConfigService],
     }),
   ],
+  controllers: [UserController],
   providers: [UserService],
   exports: [UserService],
 })

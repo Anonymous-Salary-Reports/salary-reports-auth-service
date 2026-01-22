@@ -7,14 +7,14 @@ import {
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
-import { GoogleOAuthGuard } from './guards/google-oauth.guard';
-import { AuthService } from './auth.service';
+import { GoogleOAuthGuard } from '../guards/google-oauth.guard';
+import { AuthService } from '../service/auth.service';
 import type {
   AuthenticatedRequest,
   LogoutResponse,
   OAuthRequest,
-} from './model/auth-model.types';
-import { JwtAuthGuard } from './guards/jwt-auth.guard';
+} from '../model/auth-model.types';
+import { JwtAuthGuard } from '../guards/jwt-auth.guard';
 import type { Request, Response } from 'express';
 import { ConfigService } from '@nestjs/config';
 
@@ -35,7 +35,7 @@ export class AuthController {
     @Req() req: OAuthRequest,
     @Res() res: Response,
   ): Promise<void> {
-    const { userId, accessToken, refreshToken } =
+    const { userId, accessToken, refreshToken, role } =
       await this.authService.handleOAuthLogin(req.user);
 
     res.cookie('refreshToken', refreshToken, {
@@ -45,7 +45,7 @@ export class AuthController {
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
     res.redirect(
-      `http://localhost:5173/auth/callback?token=${accessToken}&userId=${userId}`,
+      `http://localhost:5173/auth/callback?token=${accessToken}&userId=${userId}&role=${role}`,
     );
   }
 
